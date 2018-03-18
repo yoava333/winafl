@@ -182,7 +182,9 @@ onexception(void *drcontext, dr_exception_t *excpt) {
        (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION) ||
        (exception_code == EXCEPTION_PRIV_INSTRUCTION) ||
        (exception_code == STATUS_HEAP_CORRUPTION) ||
-       (exception_code == EXCEPTION_STACK_OVERFLOW)) {
+       (exception_code == EXCEPTION_STACK_OVERFLOW) ||
+       (exception_code == STATUS_STACK_BUFFER_OVERRUN) ||
+       (exception_code == STATUS_FATAL_APP_EXIT)) {
             if(options.debug_mode) {
                 dr_fprintf(winafl_data.log, "crashed\n");
             } else {
@@ -492,6 +494,38 @@ createfilea_interceptor(void *wrapcxt, INOUT void **user_data)
         dr_fprintf(winafl_data.log, "In OpenFileA, reading %s\n", filename);
 }
 
+static void
+isprocessorfeaturepresent_interceptor_pre(void *wrapcxt, INOUT void **user_data)
+{
+    DWORD feature = (DWORD)drwrap_get_arg(wrapcxt, 0);
+    *user_data = (void*)feature;
+}
+
+static void
+isprocessorfeaturepresent_interceptor_post(void *wrapcxt, void *user_data)
+{
+    DWORD feature = (DWORD)user_data;
+    if(feature == PF_FASTFAIL_AVAILABLE) {
+        if(options.debug_mode) {
+            dr_fprintf(winafl_data.log, "About to make IsProcessorFeaturePresent(%d) returns 0\n", feature);
+        }
+
+        // Make the software thinks that _fastfail() is not supported.
+        drwrap_set_retval(wrapcxt, (void*)0);
+    }
+}
+
+static void
+unhandledexceptionfilter_interceptor_pre(void *wrapcxt, INOUT void **user_data)
+{
+    PEXCEPTION_POINTERS exception = (PEXCEPTION_POINTERS)drwrap_get_arg(wrapcxt, 0);
+    dr_exception_t dr_exception = { 0 };
+
+    // Fake an exception
+    dr_exception.record = exception->ExceptionRecord;
+    onexception(NULL, &dr_exception);
+}
+
 
 static void
 event_module_unload(void *drcontext, const module_data_t *info)
@@ -539,6 +573,24 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
             drwrap_wrap(to_wrap, createfilea_interceptor, NULL);
         }
     }
+
+	if(_stricmp(module_name, "kernelbase.dll") == 0) {
+		// We are hooking IsProcessorFeaturePresent/PF_FASTFAIL_AVAILABLE
+		// Because since Win8, software can use _fastfail() which will not
+		// invoke the exception handler.
+		// Consequence of that, is that DR will not be able to see the exception.
+
+		// Some softwares (see CRT __report_gsfailure routine for example) are
+		// nice enough to ask ntos if it supports it, and if it does not they craft an
+		// exception and pass it to UnhandledExceptionFilter which we will also
+		// hook and pass to winafl's exception handler.
+
+		to_wrap = (app_pc)dr_get_proc_address(info->handle, "IsProcessorFeaturePresent");
+		drwrap_wrap(to_wrap, isprocessorfeaturepresent_interceptor_pre, isprocessorfeaturepresent_interceptor_post);
+
+		to_wrap = (app_pc)dr_get_proc_address(info->handle, "UnhandledExceptionFilter");
+		drwrap_wrap(to_wrap, unhandledexceptionfilter_interceptor_pre, NULL);
+	}
 
     module_table_load(module_table, info);
 }
