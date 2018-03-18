@@ -7465,6 +7465,31 @@ int getopt(int argc, char **argv, char *optstring) {
   }
 }
 
+void enable_ansi_console(void) {
+	// Set output mode to handle virtual terminal sequences
+	HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+	if (hOut == INVALID_HANDLE_VALUE)
+	{
+		printf("gle3 = %d\n", GetLastError());
+		return;
+	}
+
+	DWORD dwMode = 0;
+	if (!GetConsoleMode(hOut, &dwMode))
+	{
+		printf("gle1 = %d\n", GetLastError());
+		return;
+		//return GetLastError();
+	}
+
+	dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	if (!SetConsoleMode(hOut, dwMode))
+	{
+		printf("gle2 = %d\n", GetLastError());
+		//return GetLastError();
+	}
+}
+
 /* Main entry point */
 int main(int argc, char** argv) {
 
@@ -7477,6 +7502,7 @@ int main(int argc, char** argv) {
   char** use_argv;
 
   setup_watchdog_timer();
+  enable_ansi_console();
 
   SAYF("WinAFL " WINAFL_VERSION " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");

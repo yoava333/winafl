@@ -37,7 +37,7 @@
 
 /* Comment out to disable terminal colors: */
 
-// #define USE_COLOR
+ #define USE_COLOR
 
 /* Comment out to disable fancy ANSI boxes and use poor man's 7-bit UI: */
 

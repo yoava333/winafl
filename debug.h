@@ -122,17 +122,17 @@
  * Misc terminal codes *
  ***********************/
 
-//#define TERM_HOME     "\x1b[H"
-//#define TERM_CLEAR    TERM_HOME "\x1b[2J"
-//#define cEOL          "\x1b[0K"
-//#define CURSOR_HIDE   "\x1b[?25l"
-//#define CURSOR_SHOW   "\x1b[?25h"
+#define TERM_HOME     "\x1b[H"
+#define TERM_CLEAR    TERM_HOME "\x1b[2J"
+#define cEOL          "\x1b[0K"
+#define CURSOR_HIDE   "\x1b[?25l"
+#define CURSOR_SHOW   "\x1b[?25h"
 
-#define TERM_HOME     ""
-#define TERM_CLEAR    ""
-#define cEOL          ""
-#define CURSOR_HIDE   ""
-#define CURSOR_SHOW   ""
+//#define TERM_HOME     ""
+//#define TERM_CLEAR    ""
+//#define cEOL          ""
+//#define CURSOR_HIDE   ""
+//#define CURSOR_SHOW   ""
 
 /************************
  * Debug & error macros *
