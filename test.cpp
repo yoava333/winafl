@@ -102,7 +102,7 @@ int __declspec(noinline) test_target(char* input_file_path, char* argv_0)
 	return 0;
 }
 
-int main(int argc, char** argv)
+int __declspec(dllexport) main(int argc, char** argv)
 {
     if(argc < 2) {
         printf("Usage: %s <input file>\n", argv[0]);

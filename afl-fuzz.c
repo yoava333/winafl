@@ -2453,35 +2453,80 @@ DWORD WINAPI watchdog_timer( LPVOID lpParam ) {
 	}
 }
 
+FILE * dbg = NULL;
+u64 start_time = 0;
+
+
+void debug_log(const char * format, ...) {
+	static char buf[4096];
+	
+	if (!dbg) {
+		dbg = fopen("dbg.txt", "w");
+		start_time = get_cur_time();
+		if (!dbg) {
+			FATAL("failed to open dbg file");
+		}
+	}
+	
+	int ret = sprintf(buf, "%llu - ", (get_cur_time() - start_time));
+	if (ret < 0) {
+		FATAL("failed to format time\n");
+	}
+	if (ret != fwrite(buf, 1, ret, dbg)) {
+		FATAL("failed to write time to debug file\n");
+	}
+
+	va_list args;
+	va_start(args, format);
+	ret = vsprintf(buf, format, args);
+	if (ret < 0) {
+		FATAL("failed to format debug file\n");
+	}
+	if (ret != fwrite(buf, 1, ret, dbg)) {
+		FATAL("failed to write to debug file\n");
+	}
+	va_end(args);
+}
+
 char ReadCommandFromPipe(u32 timeout)
 {
 	DWORD num_read;
 	char result = 0;
+	debug_log("==> %s: fic = %d\n", __func__, fuzz_iterations_current);
+	
 	if (!is_child_running())
 	{
+		debug_log("<== %s: return 0\n", __func__);
 		return 0;
 	}
 
-	if (ReadFile(pipe_handle, &result, 1, &num_read, &pipe_overlapped) || GetLastError() == ERROR_IO_PENDING)
+	BOOL ret = ReadFile(pipe_handle, &result, 1, &num_read, &pipe_overlapped);
+	DWORD gle = GetLastError();
+	if (ret || gle == ERROR_IO_PENDING)
 	{
+		debug_log("<== %s: ret = %d, gle = %d\n", __func__, ret, gle);
 		//ACTF("ReadFile success or GLE IO_PENDING", result);
 		if (WaitForSingleObject(pipe_overlapped.hEvent, timeout) != WAIT_OBJECT_0) {
 			// took longer than specified timeout or other error - cancel read
 			CancelIo(pipe_handle);
 			WaitForSingleObject(pipe_overlapped.hEvent, INFINITE); //wait for cancelation to finish properly.
 			result = 0;
+			debug_log("=== %s: WaitForSingleObject != WAIT_OBJECT_0\n", __func__);
 		}
 	}
 	//ACTF("ReadFile GLE %d", GetLastError());
 	//ACTF("read from pipe '%c'", result);
+	debug_log("<== %s: result = %d\n", __func__, result);
 	return result;
 }
 
 void WriteCommandToPipe(char cmd)
 {
-	DWORD num_written;
+	DWORD num_written = 0;
 	//ACTF("write to pipe '%c'", cmd);
-	WriteFile(pipe_handle, &cmd, 1, &num_written, &pipe_overlapped);
+	debug_log("==> %s: cmd = '%c', fic = %d\n", __func__, cmd, fuzz_iterations_current);
+	BOOL ret = WriteFile(pipe_handle, &cmd, 1, &num_written, &pipe_overlapped);
+	debug_log("<== %s: ret = %d, gle = %d, num_written = %d\n", __func__, ret, GetLastError(), num_written);
 }
 
 static void setup_watchdog_timer() {
@@ -2638,6 +2683,7 @@ static u8 run_target(char** argv, u32 timeout) {
   result = ReadCommandFromPipe(timeout);
   if (result == 'K')
   {
+	  debug_log("%s: work around\n", __func__);
 	  //a workaround for first cycle in app persistent mode
 	  result = ReadCommandFromPipe(timeout);
   }
@@ -2646,6 +2692,12 @@ static u8 run_target(char** argv, u32 timeout) {
 	  //saves us from getting stuck in corner case.
 	  MemoryBarrier();
 	  watchdog_enabled = 0;
+	  debug_log("%s: result == 0\n", __func__);
+
+	  // @yoava333: fixes the simptom not the issue 
+	  //destroy_target_process(0);
+	  //return FAULT_TMOUT;
+
 	  return FAULT_NONE;
   }
   if (result != 'P')

@@ -182,18 +182,70 @@ event_soft_kill(process_id_t pid, int exit_code)
  * Event Callbacks
  */
 
+typedef unsigned long long uint64_t;
+typedef uint64_t u64;
+
+static u64 get_cur_time(void) {
+
+	u64 ret;
+	FILETIME filetime;
+	GetSystemTimeAsFileTime(&filetime);
+
+	ret = (((u64)filetime.dwHighDateTime) << 32) + (u64)filetime.dwLowDateTime;
+
+	return ret / 10000;
+
+}
+
+static file_t dbg;
+
+void debug_log(const char * format, ...) {
+	static char buf[4096];
+	static u64 start_time = 0;
+
+	if (!start_time) {
+		start_time = get_cur_time();
+	}
+
+	buf[0] = '\0';
+
+	va_list args;
+	va_start(args, format);
+	dr_vsnprintf(buf, sizeof(buf), format, args);
+	va_end(args);
+
+	dr_fprintf(dbg, "%llu - %s", get_cur_time()-start_time, buf);
+
+	return;
+
+}
+
+
 char ReadCommandFromPipe()
 {
 	DWORD num_read;
-	char result;
-	ReadFile(pipe, &result, 1, &num_read, NULL);
+	char result = 0;
+	
+	debug_log("==> %s: \n", __func__);
+	
+	BOOL ret = ReadFile(pipe, &result, 1, &num_read, NULL);
+	
+	debug_log("<== %s: ret = %d, gle = %d, result = %02x\n", __func__, 
+		      ret, GetLastError(), (unsigned char)result);
+	
 	return result;
 }
 
 void WriteCommandToPipe(char cmd)
 {
-	DWORD num_written;
-	WriteFile(pipe, &cmd, 1, &num_written, NULL);
+	DWORD num_written = 0;
+	
+	debug_log("==> %s: cmd = %c\n", __func__, cmd);
+	
+	BOOL ret = WriteFile(pipe, &cmd, 1, &num_written, NULL);
+
+	debug_log("==> %s: ret = %d, gle = %d, wr = %d\n", 
+		__func__, ret, GetLastError(), num_written);
 }
 
 static void
@@ -484,6 +536,8 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     int i;
     void *drcontext;
 
+	debug_log("%s\n", __func__);
+
     app_pc target_to_fuzz = drwrap_get_func(wrapcxt);
     dr_mcontext_t *mc = drwrap_get_mcontext_ex(wrapcxt, DR_MC_ALL);
     drcontext = drwrap_get_drcontext(wrapcxt);
@@ -665,6 +719,7 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
             }
 			if (options.persistence_mode == native_mode)
 			{
+				debug_log("wrapping!\n");
 				drwrap_wrap_ex(to_wrap, pre_fuzz_handler, post_fuzz_handler, NULL, options.callconv);
 			}
 			if (options.persistence_mode == in_app)
@@ -748,6 +803,15 @@ event_init(void)
     memset(winafl_data.cache, 0, sizeof(winafl_data.cache));
     memset(winafl_data.afl_area, 0, MAP_SIZE);
 
+	dbg = drx_open_unique_appid_file(options.logdir, dr_get_process_id(),
+		"winafl", "debug.log",
+		DR_FILE_ALLOW_LARGE,
+		buf, BUFFER_SIZE_ELEMENTS(buf));
+	DR_ASSERT_MSG(dbg, "failed to open debug file");
+	
+	debug_log("Loaded!\n");
+
+
     if(options.debug_mode) {
         debug_data.pre_hanlder_called = 0;
         debug_data.post_handler_called = 0;
@@ -769,6 +833,7 @@ event_init(void)
 
 static void
 setup_pipe() {
+	debug_log("pipe setup!\n");
     pipe = CreateFile(
          options.pipe_name,   // pipe name
          GENERIC_READ |  // read and write access
